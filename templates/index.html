@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>美股分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>美股分析系统</h1>
+      <p class="subtitle">输入公司名称或股票代码，生成专业级投资研究报告。</p>
+      <form id="analyze-form" class="card">
+        <label for="query">公司名称 / 股票代码</label>
+        <input id="query" name="query" placeholder="例如：AAPL 或 Apple" required />
+        <button type="submit">确定</button>
+      </form>
+      <p id="status" class="status"></p>
+      <a class="link" href="/reports" target="_blank" rel="noopener noreferrer">查看历史分析报告</a>
+    </main>
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
+  </body>
+</html>

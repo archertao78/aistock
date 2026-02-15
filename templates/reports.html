@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>报告中心 - 美股分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <main class="report-layout">
+      <section class="sidebar card">
+        <h2>历史报告</h2>
+        <ul id="report-list"></ul>
+      </section>
+      <section class="card report-viewer">
+        <h2 id="report-title">请选择一份报告</h2>
+        <p id="report-meta" class="subtitle"></p>
+        <article id="report-content"></article>
+      </section>
+    </main>
+    <script src="{{ url_for('static', filename='reports.js') }}"></script>
+  </body>
+</html>
