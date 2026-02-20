@@ -4,14 +4,28 @@ const submitBtn = document.getElementById("submitBtn");
 const historyList = document.getElementById("historyList");
 const refreshHistoryBtn = document.getElementById("refreshHistory");
 
+const cryptoForm = document.getElementById("cryptoForm");
+const cryptoInput = document.getElementById("cryptoInstId");
+const cryptoSubmitBtn = document.getElementById("cryptoSubmitBtn");
+const cryptoStatusEl = document.getElementById("cryptoStatus");
+const cryptoList = document.getElementById("cryptoMonitorList");
+const cryptoRefreshBtn = document.getElementById("cryptoRefresh");
+
 function fmtTime(iso) {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("zh-CN");
 }
 
 function setStatus(text, isError = false) {
+  if (!statusEl) return;
   statusEl.textContent = text;
   statusEl.style.color = isError ? "#ff8d8d" : "";
+}
+
+function setCryptoStatus(text, isError = false) {
+  if (!cryptoStatusEl) return;
+  cryptoStatusEl.textContent = text;
+  cryptoStatusEl.style.color = isError ? "#ff8d8d" : "";
 }
 
 function normalizeSymbolOrName(input) {
@@ -36,6 +50,31 @@ function matchesSymbolOrName(query, candidate) {
   return c.startsWith(`${q} `) || c.includes(`(${q})`) || c.includes(`[${q}]`);
 }
 
+function normalizeInstId(input) {
+  const raw = String(input || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\//g, "-")
+    .replace(/\s+/g, "");
+  if (!raw) return "";
+  return raw.includes("-") ? raw : `${raw}-USDT`;
+}
+
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function signalTypeLabel(type) {
+  if (type === "golden_cross") return "金叉";
+  if (type === "death_cross") return "死叉";
+  return "暂无";
+}
+
 async function findLatestExistingReportId(symbolOrName) {
   const res = await fetch("/api/reports?limit=1000", { cache: "no-store" });
   if (!res.ok) return null;
@@ -46,6 +85,8 @@ async function findLatestExistingReportId(symbolOrName) {
 }
 
 async function loadHistory() {
+  if (!historyList) return;
+
   try {
     const res = await fetch("/api/reports?limit=30");
     const list = await res.json();
@@ -63,7 +104,7 @@ async function loadHistory() {
       const li = document.createElement("li");
       li.className = "history-item";
       li.innerHTML = `
-        <a href="/report/${row.id}" target="_blank" rel="noopener noreferrer">${row.symbolOrName}</a>
+        <a href="/report/${row.id}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.symbolOrName)}</a>
         <span class="meta">${fmtTime(row.createdAt)}</span>
       `;
       historyList.appendChild(li);
@@ -73,56 +114,182 @@ async function loadHistory() {
   }
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-
-  const payload = {
-    symbolOrName: document.getElementById("symbolOrName").value.trim(),
-  };
-
-  if (!payload.symbolOrName) {
-    setStatus("请先输入公司名称或股票代码", true);
-    return;
-  }
+async function loadCryptoMonitors() {
+  if (!cryptoList) return;
 
   try {
-    submitBtn.disabled = true;
-    setStatus("分析中，请稍候...");
+    const res = await fetch("/api/crypto/monitor", { cache: "no-store" });
+    const data = await res.json();
 
-    const existingId = await findLatestExistingReportId(payload.symbolOrName);
-    if (existingId) {
-      setStatus("已存在同名报告，正在打开最新报告...");
-      window.open(`/report/${existingId}`, "_blank", "noopener,noreferrer");
+    if (!res.ok) {
+      throw new Error(data?.message || "加载盯盘列表失败");
+    }
+
+    const items = Array.isArray(data?.items) ? data.items : [];
+    cryptoList.innerHTML = "";
+
+    if (items.length === 0) {
+      const li = document.createElement("li");
+      li.className = "history-item";
+      li.textContent = "暂无运行中的盯盘任务";
+      cryptoList.appendChild(li);
       return;
     }
 
-    const res = await fetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+    items.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "history-item monitor-item";
+
+      const signalText = item.lastSignalType
+        ? `${signalTypeLabel(item.lastSignalType)} @ ${fmtTime(item.lastSignalAt)}`
+        : "暂无";
+
+      li.innerHTML = `
+        <div class="monitor-main">
+          <strong>${escapeHtml(item.instId)}</strong>
+          <span class="meta">启动时间: ${fmtTime(item.startedAt)}</span>
+          <span class="meta">最近检查: ${item.lastCheckedAt ? fmtTime(item.lastCheckedAt) : "尚未执行"}</span>
+          <span class="meta">最近信号: ${signalText}</span>
+        </div>
+        <button class="ghost" type="button" data-inst-id="${escapeHtml(item.instId)}">停止</button>
+      `;
+
+      cryptoList.appendChild(li);
     });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data?.message || "提交失败");
-    }
-
-    if (data?.reused) {
-      setStatus("已存在同名报告，正在打开最新报告...");
-    } else {
-      setStatus("报告已生成，正在打开...");
-    }
-    await loadHistory();
-    window.open(`/report/${data.id}`, "_blank", "noopener,noreferrer");
   } catch (err) {
-    setStatus(err.message || "分析失败", true);
-  } finally {
-    submitBtn.disabled = false;
+    cryptoList.innerHTML = `<li class="history-item">${escapeHtml(err.message || "盯盘列表加载失败")}</li>`;
   }
-});
+}
 
-refreshHistoryBtn.addEventListener("click", () => {
-  loadHistory();
-});
+if (form) {
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const payload = {
+      symbolOrName: document.getElementById("symbolOrName").value.trim(),
+    };
+
+    if (!payload.symbolOrName) {
+      setStatus("请先输入公司名称或股票代码", true);
+      return;
+    }
+
+    try {
+      submitBtn.disabled = true;
+      setStatus("分析中，请稍候...");
+
+      const existingId = await findLatestExistingReportId(payload.symbolOrName);
+      if (existingId) {
+        setStatus("已存在同名报告，正在打开最新报告...");
+        window.open(`/report/${existingId}`, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.message || "提交失败");
+      }
+
+      if (data?.reused) {
+        setStatus("已存在同名报告，正在打开最新报告...");
+      } else {
+        setStatus("报告已生成，正在打开...");
+      }
+
+      await loadHistory();
+      window.open(`/report/${data.id}`, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setStatus(err.message || "分析失败", true);
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+}
+
+if (refreshHistoryBtn) {
+  refreshHistoryBtn.addEventListener("click", () => {
+    loadHistory();
+  });
+}
+
+if (cryptoForm) {
+  cryptoForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const instId = normalizeInstId(cryptoInput?.value || "");
+    if (!instId) {
+      setCryptoStatus("请输入交易对，例如 BTC-USDT", true);
+      return;
+    }
+
+    try {
+      cryptoSubmitBtn.disabled = true;
+      setCryptoStatus(`正在启动 ${instId} 盯盘...`);
+
+      const res = await fetch("/api/crypto/monitor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.message || "启动盯盘失败");
+      }
+
+      setCryptoStatus(`${data?.monitor?.instId || instId} 已启动，每 1 分钟执行一次`);
+      await loadCryptoMonitors();
+    } catch (err) {
+      setCryptoStatus(err.message || "启动盯盘失败", true);
+    } finally {
+      cryptoSubmitBtn.disabled = false;
+    }
+  });
+}
+
+if (cryptoRefreshBtn) {
+  cryptoRefreshBtn.addEventListener("click", () => {
+    loadCryptoMonitors();
+  });
+}
+
+if (cryptoList) {
+  cryptoList.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const btn = target.closest("button[data-inst-id]");
+    if (!btn) return;
+
+    const instId = btn.getAttribute("data-inst-id") || "";
+    if (!instId) return;
+
+    try {
+      btn.disabled = true;
+      const res = await fetch(`/api/crypto/monitor/${encodeURIComponent(instId)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || "停止盯盘失败");
+      }
+
+      setCryptoStatus(`${instId} 已停止`);
+      await loadCryptoMonitors();
+    } catch (err) {
+      setCryptoStatus(err.message || "停止盯盘失败", true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
 
 loadHistory();
+loadCryptoMonitors();

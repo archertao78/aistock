@@ -1,10 +1,11 @@
-﻿const path = require("path");
+const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
 const dotenv = require("dotenv");
 
-const { buildPrompt } = require("./prompt");
+const { buildPrompt, buildCryptoSignalPrompt } = require("./prompt");
 const { callGemini } = require("./gemini");
+const { CryptoMonitorService } = require("./cryptoMonitor");
 const {
   saveReport,
   getReportById,
@@ -29,6 +30,43 @@ const ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET || "change_me_to_a_lon
 const ADMIN_SESSION_HOURS = Number(process.env.ADMIN_SESSION_HOURS || 24);
 const ADMIN_COOKIE_NAME = "aistock_admin_token";
 const ADMIN_COOKIE_SECURE = String(process.env.ADMIN_COOKIE_SECURE || "false") === "true";
+
+const cryptoMonitor = new CryptoMonitorService({
+  async onSignal(signalData) {
+    const snapshot = {
+      instId: signalData.instId,
+      signalType: signalData.signalType,
+      candleTime: signalData.candleTime,
+      close: signalData.close,
+      macd: Number(signalData.macd.toFixed(6)),
+      signalLine: Number(signalData.signalLine.toFixed(6)),
+      histogram: Number(signalData.histogram.toFixed(6)),
+    };
+
+    console.log("[crypto-monitor] signal triggered:", JSON.stringify(snapshot));
+
+    if (!GEMINI_API_KEY) {
+      console.warn("[crypto-monitor] GEMINI_API_KEY is missing. Skipped AI analysis.");
+      return;
+    }
+
+    try {
+      const prompt = buildCryptoSignalPrompt(snapshot);
+      const analysis = await callGemini({
+        apiKey: GEMINI_API_KEY,
+        model: GEMINI_MODEL,
+        baseUrl: GEMINI_BASE_URL,
+        prompt,
+      });
+
+      console.log(`[crypto-monitor][ai] ${snapshot.instId} ${snapshot.signalType}`);
+      console.log(analysis);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[crypto-monitor][ai] ${snapshot.instId} failed: ${message}`);
+    }
+  },
+});
 
 function parseCookies(req) {
   const header = String(req.headers.cookie || "");
@@ -152,6 +190,47 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     now: new Date().toISOString(),
   });
+});
+
+app.get("/api/crypto/monitor", (_req, res) => {
+  res.json({
+    items: cryptoMonitor.list(),
+  });
+});
+
+app.post("/api/crypto/monitor", (req, res) => {
+  const instId = String(req.body?.instId || "").trim();
+  if (!instId) {
+    return res.status(400).json({ message: "Please provide instId, e.g. BTC-USDT." });
+  }
+
+  try {
+    const monitor = cryptoMonitor.start(instId);
+    return res.json({ ok: true, monitor });
+  } catch (err) {
+    return res.status(400).json({
+      message: err instanceof Error ? err.message : "Invalid instId.",
+    });
+  }
+});
+
+app.delete("/api/crypto/monitor/:instId", (req, res) => {
+  const instId = decodeURIComponent(String(req.params.instId || "").trim());
+  if (!instId) {
+    return res.status(400).json({ message: "instId is required." });
+  }
+
+  try {
+    const stopped = cryptoMonitor.stop(instId);
+    if (!stopped) {
+      return res.status(404).json({ message: "Monitor not found." });
+    }
+    return res.json({ ok: true, instId });
+  } catch (err) {
+    return res.status(400).json({
+      message: err instanceof Error ? err.message : "Invalid instId.",
+    });
+  }
 });
 
 app.post("/api/analyze", async (req, res) => {
@@ -357,4 +436,3 @@ app.get("*", (_req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
-

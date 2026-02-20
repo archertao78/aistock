@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -37,6 +37,24 @@
           </div>
         </form>
 
+        <h2 class="section-title">数字货币盯盘（OKX）</h2>
+        <p class="subtext">输入 OKX 交易对（例如 BTC-USDT），系统将每 1 分钟检查一次 30m MACD 金叉/死叉。</p>
+
+        <form id="cryptoForm" class="form-grid">
+          <label>
+            交易对 (instId)
+            <input id="cryptoInstId" name="instId" type="text" placeholder="例如：BTC-USDT" required />
+          </label>
+
+          <div class="actions">
+            <button id="cryptoSubmitBtn" type="submit">启动盯盘</button>
+            <button id="cryptoRefresh" class="ghost" type="button">刷新列表</button>
+            <span id="cryptoStatus" class="status"></span>
+          </div>
+        </form>
+
+        <ul id="cryptoMonitorList" class="monitor-list"></ul>
+
         <section class="wx-promo" aria-label="公众号信息">
           <div class="wx-copy">
             <p class="wx-title">要获取更多信息请关注</p>
@@ -60,6 +78,6 @@
       </section>
     </main>
 
-    <script src="/main.js?v=20260216-2"></script>
+    <script src="/main.js?v=20260220-crypto-1"></script>
   </body>
 </html>
