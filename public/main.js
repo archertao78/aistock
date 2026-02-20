@@ -263,7 +263,7 @@ if (cryptoForm) {
         throw new Error(data?.message || "启动盯盘失败");
       }
 
-      setCryptoStatus(`${data?.monitor?.instId || instId} 已启动，每 30 分钟执行一次并推送 Telegram`);
+      setCryptoStatus(`${data?.monitor?.instId || instId} 已启动：每分钟轮询，盘中交叉立即推送，收盘再推送OHLC+MACD`);
       await loadCryptoMonitors();
     } catch (err) {
       setCryptoStatus(err.message || "启动盯盘失败", true);

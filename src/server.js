@@ -75,12 +75,20 @@ function formatSignalLabel(signalType) {
 }
 
 function buildTickTelegramMessage(tickData) {
+  const candleStatus = tickData.candleStatus || "unknown";
+  const isCross = tickData.signalType === "golden_cross" || tickData.signalType === "death_cross";
+  const signalHeadline = isCross ? "Cross signal detected" : "No cross";
+
   return [
-    `OKX monitor update: ${tickData.instId}`,
+    `OKX monitor update: ${tickData.instId} (${signalHeadline})`,
     `Monitor ID: ${tickData.monitorId || "N/A"}`,
+    `Candle status: ${candleStatus}`,
     `Checked at (Beijing): ${formatBeijingTime(tickData.checkedAt || new Date().toISOString())}`,
     `30m candle time (Beijing): ${formatBeijingTime(tickData.candleTime || "N/A")}`,
-    `Latest close: ${formatNumber(tickData.close, 4)}`,
+    `Open: ${formatNumber(tickData.open, 4)}`,
+    `High: ${formatNumber(tickData.high, 4)}`,
+    `Low: ${formatNumber(tickData.low, 4)}`,
+    `Close: ${formatNumber(tickData.close, 4)}`,
     `MACD: ${formatNumber(tickData.macd)}`,
     `Signal: ${formatNumber(tickData.signalLine)}`,
     `Histogram: ${formatNumber(tickData.histogram)}`,

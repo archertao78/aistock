@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const fetch = global.fetch || require("node-fetch");
 
 const OKX_BASE_URL = String(process.env.OKX_BASE_URL || "https://www.okx.com").replace(/\/+$/, "");
-const DEFAULT_INTERVAL_MS = Math.max(15000, Number(process.env.CRYPTO_MONITOR_INTERVAL_MS || 1800000));
+const DEFAULT_INTERVAL_MS = Math.max(15000, Math.min(60000, Number(process.env.CRYPTO_MONITOR_INTERVAL_MS || 60000)));
 
 function normalizeInstId(input) {
   const raw = String(input || "")
@@ -64,6 +64,7 @@ async function fetchOkxCandles30m(instId, limit = 120) {
       high: Number(row?.[2]),
       low: Number(row?.[3]),
       close: Number(row?.[4]),
+      confirm: row?.[8] === undefined || row?.[8] === null ? null : Number(row?.[8]),
     }))
     .filter(
       (item) =>
@@ -71,7 +72,8 @@ async function fetchOkxCandles30m(instId, limit = 120) {
         Number.isFinite(item.open) &&
         Number.isFinite(item.high) &&
         Number.isFinite(item.low) &&
-        Number.isFinite(item.close),
+        Number.isFinite(item.close) &&
+        (item.confirm === null || Number.isFinite(item.confirm)),
     )
     .sort((a, b) => a.ts - b.ts);
 
@@ -80,6 +82,21 @@ async function fetchOkxCandles30m(instId, limit = 120) {
   }
 
   return candles;
+}
+
+function getClosedCandles(candles) {
+  const list = Array.isArray(candles) ? candles : [];
+  const confirmed = list.filter((item) => item.confirm === 1);
+  if (confirmed.length > 0) {
+    return confirmed;
+  }
+
+  // Fallback for payloads without `confirm`: assume newest candle might still be forming.
+  if (list.length > 1) {
+    return list.slice(0, -1);
+  }
+
+  return list;
 }
 
 function computeEmaSeries(values, period) {
@@ -166,6 +183,8 @@ class CryptoMonitorService {
         lastSignalAt: null,
         lastSignalType: null,
         lastTriggerKey: null,
+        lastClosedCandleTs: null,
+        initialized: false,
         telegramBotToken,
         telegramChatId,
       };
@@ -231,83 +250,152 @@ class CryptoMonitorService {
     }
 
     const candles = await fetchOkxCandles30m(state.instId, 120);
+    const closedCandles = getClosedCandles(candles);
     state.lastCheckedAt = new Date().toISOString();
 
-    if (candles.length < 35) {
-      const result = {
+    if (closedCandles.length < 35) {
+      return {
         monitorId: state.monitorId,
         instId: state.instId,
         triggered: false,
-        reason: "insufficient_candles",
+        reason: "insufficient_closed_candles",
         checkedAt: state.lastCheckedAt,
-        telegramBotToken: state.telegramBotToken,
-        telegramChatId: state.telegramChatId,
       };
-      if (typeof this.onTick === "function") {
-        await this.onTick(result);
-      }
-      return result;
     }
 
-    const closes = candles.map((c) => c.close);
-    const macdSeries = calculateMacdSeries(closes);
+    const latestClosed = closedCandles[closedCandles.length - 1];
+    // 1) Intrabar real-time mode:
+    // if the newest 30m candle is still forming and a cross appears, push immediately.
+    const latestMarket = candles[candles.length - 1];
+    const hasLiveCandle = latestMarket?.confirm !== 1;
 
+    if (hasLiveCandle && candles.length >= 35) {
+      const liveCloses = candles.map((c) => c.close);
+      const liveSeries = calculateMacdSeries(liveCloses);
+      const prevLive = liveSeries[liveSeries.length - 2];
+      const currLive = liveSeries[liveSeries.length - 1];
+      const liveSignalType = detectSignal(prevLive, currLive);
+
+      if (liveSignalType) {
+        const liveTriggerKey = `${latestMarket.ts}:${liveSignalType}`;
+        if (state.lastTriggerKey !== liveTriggerKey) {
+          state.lastTriggerKey = liveTriggerKey;
+          state.lastSignalAt = new Date().toISOString();
+          state.lastSignalType = liveSignalType;
+
+          const livePayload = {
+            monitorId: state.monitorId,
+            instId: state.instId,
+            checkedAt: state.lastCheckedAt,
+            candleTime: new Date(latestMarket.ts).toISOString(),
+            open: latestMarket.open,
+            high: latestMarket.high,
+            low: latestMarket.low,
+            close: latestMarket.close,
+            macd: currLive.macd,
+            signalLine: currLive.signal,
+            histogram: currLive.histogram,
+            signalType: liveSignalType,
+            triggered: true,
+            reason: "intrabar_cross_triggered",
+            candleStatus: "intrabar",
+            telegramBotToken: state.telegramBotToken,
+            telegramChatId: state.telegramChatId,
+          };
+
+          if (typeof this.onSignal === "function") {
+            await this.onSignal({
+              instId: state.instId,
+              signalType: liveSignalType,
+              candleTime: livePayload.candleTime,
+              close: livePayload.close,
+              macd: livePayload.macd,
+              signalLine: livePayload.signalLine,
+              histogram: livePayload.histogram,
+            });
+          }
+
+          if (typeof this.onTick === "function") {
+            await this.onTick(livePayload);
+          }
+        }
+      }
+    }
+
+    // 2) Closed-candle push:
+    // only when a new closed 30m candle appears.
+    if (!state.initialized) {
+      state.initialized = true;
+      state.lastClosedCandleTs = latestClosed.ts;
+      return {
+        monitorId: state.monitorId,
+        instId: state.instId,
+        triggered: false,
+        reason: "initialized_wait_next_close",
+        checkedAt: state.lastCheckedAt,
+      };
+    }
+
+    if (state.lastClosedCandleTs && latestClosed.ts <= state.lastClosedCandleTs) {
+      return {
+        monitorId: state.monitorId,
+        instId: state.instId,
+        triggered: false,
+        reason: "no_new_closed_candle",
+        checkedAt: state.lastCheckedAt,
+      };
+    }
+
+    const closes = closedCandles.map((c) => c.close);
+    const macdSeries = calculateMacdSeries(closes);
     const previous = macdSeries[macdSeries.length - 2];
     const current = macdSeries[macdSeries.length - 1];
     const signalType = detectSignal(previous, current);
-    const latest = candles[candles.length - 1];
 
     const tickPayload = {
       monitorId: state.monitorId,
       instId: state.instId,
       checkedAt: state.lastCheckedAt,
-      candleTime: new Date(latest.ts).toISOString(),
-      close: latest.close,
+      candleTime: new Date(latestClosed.ts).toISOString(),
+      open: latestClosed.open,
+      high: latestClosed.high,
+      low: latestClosed.low,
+      close: latestClosed.close,
       macd: current.macd,
       signalLine: current.signal,
       histogram: current.histogram,
       signalType,
-      triggered: false,
-      reason: signalType ? "signal_detected" : "no_cross",
+      triggered: Boolean(signalType),
+      reason: signalType ? "cross_triggered" : "no_cross",
+      candleStatus: "closed",
       telegramBotToken: state.telegramBotToken,
       telegramChatId: state.telegramChatId,
     };
 
-    if (!signalType) {
-      if (typeof this.onTick === "function") {
-        await this.onTick(tickPayload);
+    state.lastClosedCandleTs = latestClosed.ts;
+    if (signalType) {
+      const closeTriggerKey = `${latestClosed.ts}:${signalType}`;
+      if (state.lastTriggerKey !== closeTriggerKey) {
+        state.lastTriggerKey = closeTriggerKey;
+        state.lastSignalAt = new Date().toISOString();
+        state.lastSignalType = signalType;
+
+        if (typeof this.onSignal === "function") {
+          await this.onSignal({
+            instId: state.instId,
+            signalType,
+            candleTime: tickPayload.candleTime,
+            close: tickPayload.close,
+            macd: tickPayload.macd,
+            signalLine: tickPayload.signalLine,
+            histogram: tickPayload.histogram,
+          });
+        }
+      } else {
+        tickPayload.reason = "cross_confirmed";
       }
-      return tickPayload;
     }
 
-    const triggerKey = `${latest.ts}:${signalType}`;
-
-    if (state.lastTriggerKey === triggerKey) {
-      tickPayload.reason = "duplicate_cross";
-      if (typeof this.onTick === "function") {
-        await this.onTick(tickPayload);
-      }
-      return tickPayload;
-    }
-
-    state.lastTriggerKey = triggerKey;
-    state.lastSignalAt = new Date().toISOString();
-    state.lastSignalType = signalType;
-
-    if (typeof this.onSignal === "function") {
-      await this.onSignal({
-        instId: state.instId,
-        signalType,
-        candleTime: tickPayload.candleTime,
-        close: tickPayload.close,
-        macd: tickPayload.macd,
-        signalLine: tickPayload.signalLine,
-        histogram: tickPayload.histogram,
-      });
-    }
-
-    tickPayload.triggered = true;
-    tickPayload.reason = "cross_triggered";
     if (typeof this.onTick === "function") {
       await this.onTick(tickPayload);
     }
