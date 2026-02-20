@@ -42,6 +42,32 @@ function formatNumber(value, fraction = 6) {
   return numeric.toFixed(fraction);
 }
 
+function formatBeijingTime(input) {
+  const date = input ? new Date(input) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    return String(input || "N/A");
+  }
+
+  const beijingMs = date.getTime() + 8 * 60 * 60 * 1000;
+  const bj = new Date(beijingMs);
+  const pad2 = (n) => String(n).padStart(2, "0");
+
+  return [
+    bj.getUTCFullYear(),
+    "-",
+    pad2(bj.getUTCMonth() + 1),
+    "-",
+    pad2(bj.getUTCDate()),
+    " ",
+    pad2(bj.getUTCHours()),
+    ":",
+    pad2(bj.getUTCMinutes()),
+    ":",
+    pad2(bj.getUTCSeconds()),
+    " (UTC+8)",
+  ].join("");
+}
+
 function formatSignalLabel(signalType) {
   if (signalType === "golden_cross") return "golden_cross";
   if (signalType === "death_cross") return "death_cross";
@@ -52,8 +78,8 @@ function buildTickTelegramMessage(tickData) {
   return [
     `OKX monitor update: ${tickData.instId}`,
     `Monitor ID: ${tickData.monitorId || "N/A"}`,
-    `Checked at: ${tickData.checkedAt || new Date().toISOString()}`,
-    `30m candle time: ${tickData.candleTime || "N/A"}`,
+    `Checked at (Beijing): ${formatBeijingTime(tickData.checkedAt || new Date().toISOString())}`,
+    `30m candle time (Beijing): ${formatBeijingTime(tickData.candleTime || "N/A")}`,
     `Latest close: ${formatNumber(tickData.close, 4)}`,
     `MACD: ${formatNumber(tickData.macd)}`,
     `Signal: ${formatNumber(tickData.signalLine)}`,
