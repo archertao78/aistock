@@ -6,6 +6,8 @@ const refreshHistoryBtn = document.getElementById("refreshHistory");
 
 const cryptoForm = document.getElementById("cryptoForm");
 const cryptoInput = document.getElementById("cryptoInstId");
+const telegramBotTokenInput = document.getElementById("telegramBotToken");
+const telegramChatIdInput = document.getElementById("telegramChatId");
 const cryptoSubmitBtn = document.getElementById("cryptoSubmitBtn");
 const cryptoStatusEl = document.getElementById("cryptoStatus");
 const cryptoList = document.getElementById("cryptoMonitorList");
@@ -72,13 +74,27 @@ function escapeHtml(text) {
 function signalTypeLabel(type) {
   if (type === "golden_cross") return "金叉";
   if (type === "death_cross") return "死叉";
-  return "暂无";
+  return "无";
+}
+
+async function readJsonOrThrow(response) {
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  const text = await response.text();
+  if (!contentType.includes("application/json")) {
+    throw new Error("服务返回的不是 JSON，请确认后端接口已部署并重启。");
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    throw new Error("接口返回 JSON 解析失败。");
+  }
 }
 
 async function findLatestExistingReportId(symbolOrName) {
   const res = await fetch("/api/reports?limit=1000", { cache: "no-store" });
   if (!res.ok) return null;
-  const list = await res.json();
+  const list = await readJsonOrThrow(res);
   if (!Array.isArray(list)) return null;
   const hit = list.find((row) => matchesSymbolOrName(symbolOrName, row.symbolOrName));
   return hit?.id || null;
@@ -89,7 +105,7 @@ async function loadHistory() {
 
   try {
     const res = await fetch("/api/reports?limit=30");
-    const list = await res.json();
+    const list = await readJsonOrThrow(res);
     historyList.innerHTML = "";
 
     if (!Array.isArray(list) || list.length === 0) {
@@ -109,8 +125,8 @@ async function loadHistory() {
       `;
       historyList.appendChild(li);
     });
-  } catch (_err) {
-    historyList.innerHTML = '<li class="history-item">历史加载失败</li>';
+  } catch (err) {
+    historyList.innerHTML = `<li class="history-item">${escapeHtml(err.message || "历史加载失败")}</li>`;
   }
 }
 
@@ -119,7 +135,7 @@ async function loadCryptoMonitors() {
 
   try {
     const res = await fetch("/api/crypto/monitor", { cache: "no-store" });
-    const data = await res.json();
+    const data = await readJsonOrThrow(res);
 
     if (!res.ok) {
       throw new Error(data?.message || "加载盯盘列表失败");
@@ -147,11 +163,13 @@ async function loadCryptoMonitors() {
       li.innerHTML = `
         <div class="monitor-main">
           <strong>${escapeHtml(item.instId)}</strong>
+          <span class="meta">任务ID: ${escapeHtml(item.monitorId || "")}</span>
+          <span class="meta">Telegram Chat: ${escapeHtml(item.telegramChatIdMasked || "默认环境变量")}</span>
           <span class="meta">启动时间: ${fmtTime(item.startedAt)}</span>
           <span class="meta">最近检查: ${item.lastCheckedAt ? fmtTime(item.lastCheckedAt) : "尚未执行"}</span>
           <span class="meta">最近信号: ${signalText}</span>
         </div>
-        <button class="ghost" type="button" data-inst-id="${escapeHtml(item.instId)}">停止</button>
+        <button class="ghost" type="button" data-monitor-id="${escapeHtml(item.monitorId || "")}">停止</button>
       `;
 
       cryptoList.appendChild(li);
@@ -191,17 +209,12 @@ if (form) {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = await readJsonOrThrow(res);
       if (!res.ok) {
         throw new Error(data?.message || "提交失败");
       }
 
-      if (data?.reused) {
-        setStatus("已存在同名报告，正在打开最新报告...");
-      } else {
-        setStatus("报告已生成，正在打开...");
-      }
-
+      setStatus(data?.reused ? "已存在同名报告，正在打开最新报告..." : "报告已生成，正在打开...");
       await loadHistory();
       window.open(`/report/${data.id}`, "_blank", "noopener,noreferrer");
     } catch (err) {
@@ -223,8 +236,15 @@ if (cryptoForm) {
     event.preventDefault();
 
     const instId = normalizeInstId(cryptoInput?.value || "");
+    const telegramBotToken = String(telegramBotTokenInput?.value || "").trim();
+    const telegramChatId = String(telegramChatIdInput?.value || "").trim();
+
     if (!instId) {
       setCryptoStatus("请输入交易对，例如 BTC-USDT", true);
+      return;
+    }
+    if (!telegramBotToken || !telegramChatId) {
+      setCryptoStatus("请填写 Telegram Bot Token 和 Chat ID", true);
       return;
     }
 
@@ -235,15 +255,15 @@ if (cryptoForm) {
       const res = await fetch("/api/crypto/monitor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instId }),
+        body: JSON.stringify({ instId, telegramBotToken, telegramChatId }),
       });
 
-      const data = await res.json();
+      const data = await readJsonOrThrow(res);
       if (!res.ok) {
         throw new Error(data?.message || "启动盯盘失败");
       }
 
-      setCryptoStatus(`${data?.monitor?.instId || instId} 已启动，每 1 分钟执行一次`);
+      setCryptoStatus(`${data?.monitor?.instId || instId} 已启动，每 1 分钟执行一次并推送 Telegram`);
       await loadCryptoMonitors();
     } catch (err) {
       setCryptoStatus(err.message || "启动盯盘失败", true);
@@ -264,24 +284,24 @@ if (cryptoList) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
-    const btn = target.closest("button[data-inst-id]");
+    const btn = target.closest("button[data-monitor-id]");
     if (!btn) return;
 
-    const instId = btn.getAttribute("data-inst-id") || "";
-    if (!instId) return;
+    const monitorId = String(btn.getAttribute("data-monitor-id") || "").trim();
+    if (!monitorId) return;
 
     try {
       btn.disabled = true;
-      const res = await fetch(`/api/crypto/monitor/${encodeURIComponent(instId)}`, {
+      const res = await fetch(`/api/crypto/monitor/${encodeURIComponent(monitorId)}`, {
         method: "DELETE",
       });
-      const data = await res.json();
+      const data = await readJsonOrThrow(res);
 
       if (!res.ok) {
         throw new Error(data?.message || "停止盯盘失败");
       }
 
-      setCryptoStatus(`${instId} 已停止`);
+      setCryptoStatus("盯盘任务已停止");
       await loadCryptoMonitors();
     } catch (err) {
       setCryptoStatus(err.message || "停止盯盘失败", true);

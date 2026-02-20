@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const fetch = global.fetch || require("node-fetch");
 
 const OKX_BASE_URL = String(process.env.OKX_BASE_URL || "https://www.okx.com").replace(/\/+$/, "");
@@ -20,6 +21,25 @@ function normalizeInstId(input) {
   }
 
   return normalized;
+}
+
+function normalizeOptional(input) {
+  const text = String(input || "").trim();
+  return text || "";
+}
+
+function buildMonitorId(instId, telegramBotToken, telegramChatId) {
+  const token = normalizeOptional(telegramBotToken);
+  const chatId = normalizeOptional(telegramChatId) || "default";
+  const tokenHash = token ? crypto.createHash("sha1").update(token).digest("hex").slice(0, 10) : "default";
+  return `${instId}|${chatId}|${tokenHash}`;
+}
+
+function maskChatId(chatId) {
+  const value = normalizeOptional(chatId);
+  if (!value) return "";
+  if (value.length <= 4) return value;
+  return `${"*".repeat(Math.max(1, value.length - 4))}${value.slice(-4)}`;
 }
 
 async function fetchOkxCandles30m(instId, limit = 120) {
@@ -117,29 +137,28 @@ function detectSignal(previous, current) {
 }
 
 class CryptoMonitorService {
-  constructor({ onSignal, logger = console, intervalMs = DEFAULT_INTERVAL_MS } = {}) {
+  constructor({ onSignal, onTick, logger = console, intervalMs = DEFAULT_INTERVAL_MS } = {}) {
     this.onSignal = onSignal;
+    this.onTick = onTick;
     this.logger = logger;
     this.intervalMs = Math.max(15000, Number(intervalMs || DEFAULT_INTERVAL_MS));
     this.monitors = new Map();
   }
 
   list() {
-    return Array.from(this.monitors.values()).map((item) => ({
-      instId: item.instId,
-      startedAt: item.startedAt,
-      lastCheckedAt: item.lastCheckedAt,
-      lastSignalAt: item.lastSignalAt,
-      lastSignalType: item.lastSignalType,
-    }));
+    return Array.from(this.monitors.values()).map((item) => this._snapshot(item.monitorId));
   }
 
-  start(rawInstId) {
+  start(rawInstId, options = {}) {
     const instId = normalizeInstId(rawInstId);
-    let state = this.monitors.get(instId);
+    const telegramBotToken = normalizeOptional(options.telegramBotToken);
+    const telegramChatId = normalizeOptional(options.telegramChatId);
+    const monitorId = buildMonitorId(instId, telegramBotToken, telegramChatId);
+    let state = this.monitors.get(monitorId);
 
     if (!state) {
       state = {
+        monitorId,
         instId,
         timer: null,
         startedAt: new Date().toISOString(),
@@ -147,64 +166,87 @@ class CryptoMonitorService {
         lastSignalAt: null,
         lastSignalType: null,
         lastTriggerKey: null,
+        telegramBotToken,
+        telegramChatId,
       };
-      this.monitors.set(instId, state);
+      this.monitors.set(monitorId, state);
     }
 
     if (state.timer) {
-      return this._snapshot(instId);
+      return this._snapshot(monitorId);
     }
 
     const run = async () => {
       try {
-        await this.check(instId);
+        await this.check(monitorId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        this.logger.error(`[crypto-monitor] ${instId} check failed: ${message}`);
+        this.logger.error(`[crypto-monitor] ${state.instId} check failed: ${message}`);
       }
     };
 
     run();
     state.timer = setInterval(run, this.intervalMs);
-    this.logger.log(`[crypto-monitor] started ${instId}, interval=${this.intervalMs}ms`);
+    this.logger.log(`[crypto-monitor] started ${state.instId} (${monitorId}), interval=${this.intervalMs}ms`);
 
-    return this._snapshot(instId);
+    return this._snapshot(monitorId);
   }
 
-  stop(rawInstId) {
-    const instId = normalizeInstId(rawInstId);
-    const state = this.monitors.get(instId);
+  stop(identifier) {
+    const key = String(identifier || "").trim();
+    if (!key) return 0;
 
-    if (!state) {
-      return false;
+    const exact = this.monitors.get(key);
+    if (exact) {
+      if (exact.timer) clearInterval(exact.timer);
+      this.monitors.delete(key);
+      this.logger.log(`[crypto-monitor] stopped ${exact.instId} (${key})`);
+      return 1;
     }
 
-    if (state.timer) {
-      clearInterval(state.timer);
+    let instId = "";
+    try {
+      instId = normalizeInstId(key);
+    } catch (_err) {
+      return 0;
     }
 
-    this.monitors.delete(instId);
-    this.logger.log(`[crypto-monitor] stopped ${instId}`);
-    return true;
+    const matched = Array.from(this.monitors.keys()).filter((monitorId) => this.monitors.get(monitorId)?.instId === instId);
+    matched.forEach((monitorId) => {
+      const state = this.monitors.get(monitorId);
+      if (state?.timer) clearInterval(state.timer);
+      this.monitors.delete(monitorId);
+    });
+
+    if (matched.length > 0) {
+      this.logger.log(`[crypto-monitor] stopped ${instId}, count=${matched.length}`);
+    }
+    return matched.length;
   }
 
-  async check(rawInstId) {
-    const instId = normalizeInstId(rawInstId);
-    const state = this.monitors.get(instId);
-
+  async check(monitorId) {
+    const state = this.monitors.get(String(monitorId || "").trim());
     if (!state) {
-      throw new Error(`Monitor not found for ${instId}.`);
+      throw new Error(`Monitor not found: ${monitorId}`);
     }
 
-    const candles = await fetchOkxCandles30m(instId, 120);
+    const candles = await fetchOkxCandles30m(state.instId, 120);
     state.lastCheckedAt = new Date().toISOString();
 
     if (candles.length < 35) {
-      return {
-        instId,
+      const result = {
+        monitorId: state.monitorId,
+        instId: state.instId,
         triggered: false,
         reason: "insufficient_candles",
+        checkedAt: state.lastCheckedAt,
+        telegramBotToken: state.telegramBotToken,
+        telegramChatId: state.telegramChatId,
       };
+      if (typeof this.onTick === "function") {
+        await this.onTick(result);
+      }
+      return result;
     }
 
     const closes = candles.map((c) => c.close);
@@ -213,62 +255,81 @@ class CryptoMonitorService {
     const previous = macdSeries[macdSeries.length - 2];
     const current = macdSeries[macdSeries.length - 1];
     const signalType = detectSignal(previous, current);
+    const latest = candles[candles.length - 1];
+
+    const tickPayload = {
+      monitorId: state.monitorId,
+      instId: state.instId,
+      checkedAt: state.lastCheckedAt,
+      candleTime: new Date(latest.ts).toISOString(),
+      close: latest.close,
+      macd: current.macd,
+      signalLine: current.signal,
+      histogram: current.histogram,
+      signalType,
+      triggered: false,
+      reason: signalType ? "signal_detected" : "no_cross",
+      telegramBotToken: state.telegramBotToken,
+      telegramChatId: state.telegramChatId,
+    };
 
     if (!signalType) {
-      return {
-        instId,
-        triggered: false,
-        reason: "no_cross",
-      };
+      if (typeof this.onTick === "function") {
+        await this.onTick(tickPayload);
+      }
+      return tickPayload;
     }
 
-    const latest = candles[candles.length - 1];
     const triggerKey = `${latest.ts}:${signalType}`;
 
     if (state.lastTriggerKey === triggerKey) {
-      return {
-        instId,
-        triggered: false,
-        reason: "duplicate_cross",
-      };
+      tickPayload.reason = "duplicate_cross";
+      if (typeof this.onTick === "function") {
+        await this.onTick(tickPayload);
+      }
+      return tickPayload;
     }
 
     state.lastTriggerKey = triggerKey;
     state.lastSignalAt = new Date().toISOString();
     state.lastSignalType = signalType;
 
-    const payload = {
-      instId,
-      signalType,
-      candleTime: new Date(latest.ts).toISOString(),
-      close: latest.close,
-      macd: current.macd,
-      signalLine: current.signal,
-      histogram: current.histogram,
-    };
-
     if (typeof this.onSignal === "function") {
-      await this.onSignal(payload);
+      await this.onSignal({
+        instId: state.instId,
+        signalType,
+        candleTime: tickPayload.candleTime,
+        close: tickPayload.close,
+        macd: tickPayload.macd,
+        signalLine: tickPayload.signalLine,
+        histogram: tickPayload.histogram,
+      });
     }
 
-    return {
-      triggered: true,
-      ...payload,
-    };
+    tickPayload.triggered = true;
+    tickPayload.reason = "cross_triggered";
+    if (typeof this.onTick === "function") {
+      await this.onTick(tickPayload);
+    }
+
+    return tickPayload;
   }
 
-  _snapshot(instId) {
-    const state = this.monitors.get(instId);
+  _snapshot(monitorId) {
+    const state = this.monitors.get(String(monitorId || "").trim());
     if (!state) {
       return null;
     }
 
     return {
+      monitorId: state.monitorId,
       instId: state.instId,
       startedAt: state.startedAt,
       lastCheckedAt: state.lastCheckedAt,
       lastSignalAt: state.lastSignalAt,
       lastSignalType: state.lastSignalType,
+      hasCustomTelegram: Boolean(state.telegramBotToken && state.telegramChatId),
+      telegramChatIdMasked: maskChatId(state.telegramChatId),
     };
   }
 }

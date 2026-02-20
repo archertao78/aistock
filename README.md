@@ -25,6 +25,9 @@ ADMIN_PASSWORD=change_me
 ADMIN_TOKEN_SECRET=change_me_to_a_long_random_secret
 ADMIN_SESSION_HOURS=24
 ADMIN_COOKIE_SECURE=false
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+TELEGRAM_API_BASE=https://api.telegram.org
 ```
 
 启动：
@@ -54,6 +57,20 @@ curl http://127.0.0.1:3000/api/health
 - `GET /api/reports?limit=30`
 - `GET /api/reports/:id`
 - `GET /report/:id`
+- `GET /api/crypto/monitor`
+- `POST /api/crypto/monitor`
+- `DELETE /api/crypto/monitor/:monitorId`
+
+## Telegram 推送（盯盘）
+
+配置 `.env` 后，盯盘任务每分钟检查一次时会推送最新指标到 Telegram：
+
+- `TELEGRAM_BOT_TOKEN`: BotFather 创建机器人的 token
+- `TELEGRAM_CHAT_ID`: 接收消息的聊天 ID（私聊或群）
+- `TELEGRAM_API_BASE`: 默认 `https://api.telegram.org`
+
+前端也支持在“数字货币盯盘”表单里直接输入 `Telegram Bot Token` 和 `Telegram Chat ID`，
+每个盯盘任务会绑定自己的 Telegram 参数，支持不同用户并行使用。
 
 ## 后台管理
 

@@ -6,6 +6,7 @@ const dotenv = require("dotenv");
 const { buildPrompt, buildCryptoSignalPrompt } = require("./prompt");
 const { callGemini } = require("./gemini");
 const { CryptoMonitorService } = require("./cryptoMonitor");
+const { sendTelegramMessage } = require("./telegram");
 const {
   saveReport,
   getReportById,
@@ -23,6 +24,8 @@ const PORT = Number(process.env.PORT || 3000);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "google/gemini-2.0-flash-001";
 const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || "https://openrouter.ai/api/v1";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "change_me";
@@ -31,7 +34,55 @@ const ADMIN_SESSION_HOURS = Number(process.env.ADMIN_SESSION_HOURS || 24);
 const ADMIN_COOKIE_NAME = "aistock_admin_token";
 const ADMIN_COOKIE_SECURE = String(process.env.ADMIN_COOKIE_SECURE || "false") === "true";
 
+function formatNumber(value, fraction = 6) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "N/A";
+  }
+  return numeric.toFixed(fraction);
+}
+
+function formatSignalLabel(signalType) {
+  if (signalType === "golden_cross") return "golden_cross";
+  if (signalType === "death_cross") return "death_cross";
+  return "none";
+}
+
+function buildTickTelegramMessage(tickData) {
+  return [
+    `OKX monitor update: ${tickData.instId}`,
+    `Monitor ID: ${tickData.monitorId || "N/A"}`,
+    `Checked at: ${tickData.checkedAt || new Date().toISOString()}`,
+    `30m candle time: ${tickData.candleTime || "N/A"}`,
+    `Latest close: ${formatNumber(tickData.close, 4)}`,
+    `MACD: ${formatNumber(tickData.macd)}`,
+    `Signal: ${formatNumber(tickData.signalLine)}`,
+    `Histogram: ${formatNumber(tickData.histogram)}`,
+    `Signal type: ${formatSignalLabel(tickData.signalType)}`,
+    `Status: ${tickData.reason || "N/A"}`,
+  ].join("\n");
+}
 const cryptoMonitor = new CryptoMonitorService({
+  async onTick(tickData) {
+    const botToken = String(tickData?.telegramBotToken || TELEGRAM_BOT_TOKEN || "").trim();
+    const chatId = String(tickData?.telegramChatId || TELEGRAM_CHAT_ID || "").trim();
+
+    if (!botToken || !chatId) {
+      return;
+    }
+
+    try {
+      const text = buildTickTelegramMessage(tickData);
+      await sendTelegramMessage({
+        botToken,
+        chatId,
+        text,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[telegram] send failed (${tickData.instId || "unknown"}): ${message}`);
+    }
+  },
   async onSignal(signalData) {
     const snapshot = {
       instId: signalData.instId,
@@ -200,32 +251,41 @@ app.get("/api/crypto/monitor", (_req, res) => {
 
 app.post("/api/crypto/monitor", (req, res) => {
   const instId = String(req.body?.instId || "").trim();
+  const telegramBotToken = String(req.body?.telegramBotToken || "").trim();
+  const telegramChatId = String(req.body?.telegramChatId || "").trim();
+
   if (!instId) {
     return res.status(400).json({ message: "Please provide instId, e.g. BTC-USDT." });
   }
+  if ((telegramBotToken && !telegramChatId) || (!telegramBotToken && telegramChatId)) {
+    return res.status(400).json({ message: "telegramBotToken and telegramChatId must be provided together." });
+  }
 
   try {
-    const monitor = cryptoMonitor.start(instId);
+    const monitor = cryptoMonitor.start(instId, {
+      telegramBotToken,
+      telegramChatId,
+    });
     return res.json({ ok: true, monitor });
   } catch (err) {
     return res.status(400).json({
-      message: err instanceof Error ? err.message : "Invalid instId.",
+      message: err instanceof Error ? err.message : "Invalid monitorId.",
     });
   }
 });
 
-app.delete("/api/crypto/monitor/:instId", (req, res) => {
-  const instId = decodeURIComponent(String(req.params.instId || "").trim());
-  if (!instId) {
-    return res.status(400).json({ message: "instId is required." });
+app.delete("/api/crypto/monitor/:monitorId", (req, res) => {
+  const monitorId = decodeURIComponent(String(req.params.monitorId || "").trim());
+  if (!monitorId) {
+    return res.status(400).json({ message: "monitorId is required." });
   }
 
   try {
-    const stopped = cryptoMonitor.stop(instId);
-    if (!stopped) {
+    const stoppedCount = cryptoMonitor.stop(monitorId);
+    if (!stoppedCount) {
       return res.status(404).json({ message: "Monitor not found." });
     }
-    return res.json({ ok: true, instId });
+    return res.json({ ok: true, monitorId, stoppedCount });
   } catch (err) {
     return res.status(400).json({
       message: err instanceof Error ? err.message : "Invalid instId.",
