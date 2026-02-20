@@ -1,0 +1,65 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>美股分析系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="home-bg">
+    <main class="shell">
+      <section class="panel">
+        <p class="eyebrow">AI STOCK RESEARCH</p>
+        <h1>美股分析系统</h1>
+        <p class="subtext">请输入公司名称或股票代码，生成结构化研究报告。</p>
+
+        <form id="analyzeForm" class="form-grid">
+          <label>
+            公司名称 / 股票代码
+            <input
+              id="symbolOrName"
+              name="symbolOrName"
+              type="text"
+              placeholder="例如：AAPL 或 Apple"
+              required
+            />
+          </label>
+
+          <div class="actions">
+            <button id="submitBtn" type="submit">确定</button>
+            <span id="status" class="status"></span>
+          </div>
+        </form>
+
+        <section class="wx-promo" aria-label="公众号信息">
+          <div class="wx-copy">
+            <p class="wx-title">要获取更多信息请关注</p>
+            <p class="wx-name">公众号 “火眼金晴观世界”</p>
+          </div>
+          <img
+            src="/wechat-qr.png"
+            alt="公众号二维码"
+            class="wx-qr"
+            onerror="this.style.display='none';"
+          />
+        </section>
+      </section>
+
+      <section class="panel history">
+        <div class="history-head">
+          <h2>历史报告</h2>
+          <button id="refreshHistory" class="ghost" type="button">刷新</button>
+        </div>
+        <ul id="historyList"></ul>
+      </section>
+    </main>
+
+    <script src="/main.js?v=20260216-2"></script>
+  </body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>后台管理 - 美股分析系统</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="report-bg">
+    <main class="admin-shell">
+      <header class="admin-head">
+        <div>
+          <h1>后台管理</h1>
+          <p id="adminMeta" class="subtext"></p>
+        </div>
+        <div class="admin-head-actions">
+          <a href="/" class="ghost-link">返回首页</a>
+          <button id="logoutBtn" class="ghost" type="button">退出登录</button>
+        </div>
+      </header>
+
+      <section class="panel admin-list-panel">
+        <div class="history-head">
+          <h2>报告列表</h2>
+          <button id="refreshBtn" class="ghost" type="button">刷新</button>
+        </div>
+        <ul id="adminReportList" class="admin-report-list"></ul>
+      </section>
+    </main>
+
+    <script src="/admin.js"></script>
+  </body>
+</html>

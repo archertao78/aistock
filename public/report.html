@@ -1,0 +1,31 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>分析报告 - 美股分析系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="report-bg">
+    <main class="report-shell">
+      <header class="report-head">
+        <a href="/" class="ghost-link">返回首页</a>
+        <div>
+          <h1 id="title">分析报告</h1>
+          <p id="meta" class="subtext"></p>
+        </div>
+      </header>
+
+      <article id="reportBody" class="report-body"></article>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/report.js"></script>
+  </body>
+</html>

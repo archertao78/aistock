@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>编辑报告 - 美股分析系统</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="report-bg">
+    <main class="admin-shell">
+      <header class="admin-head">
+        <div>
+          <h1 id="editTitle">编辑报告</h1>
+          <p id="editMeta" class="subtext"></p>
+        </div>
+        <div class="admin-head-actions">
+          <a href="/admin" class="ghost-link">返回后台</a>
+          <a href="/" class="ghost-link">返回首页</a>
+        </div>
+      </header>
+
+      <section class="panel admin-edit-panel">
+        <form id="editForm" class="form-grid">
+          <label>
+            公司名称 / 股票代码
+            <input id="symbolOrName" name="symbolOrName" type="text" required />
+          </label>
+
+          <label>
+            投资论点（可选）
+            <input id="thesis" name="thesis" type="text" />
+          </label>
+
+          <label>
+            目标（可选）
+            <input id="target" name="target" type="text" />
+          </label>
+
+          <label>
+            Markdown 报告内容
+            <textarea id="markdown" name="markdown" rows="18" required></textarea>
+          </label>
+
+          <div class="actions">
+            <button id="saveBtn" type="submit">保存修改</button>
+            <button id="previewBtn" class="ghost" type="button">预览</button>
+            <span id="status" class="status"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel admin-preview-panel">
+        <h2>预览</h2>
+        <article id="previewBody" class="report-body"></article>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/admin-edit.js"></script>
+  </body>
+</html>
