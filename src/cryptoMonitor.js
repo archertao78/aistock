@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const fetch = global.fetch || require("node-fetch");
 
 const OKX_BASE_URL = String(process.env.OKX_BASE_URL || "https://www.okx.com").replace(/\/+$/, "");
-const DEFAULT_INTERVAL_MS = Math.max(15000, Number(process.env.CRYPTO_MONITOR_INTERVAL_MS || 60000));
+const DEFAULT_INTERVAL_MS = Math.max(15000, Number(process.env.CRYPTO_MONITOR_INTERVAL_MS || 1800000));
 
 function normalizeInstId(input) {
   const raw = String(input || "")
