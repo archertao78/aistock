@@ -448,6 +448,39 @@ app.get("/api/admin/reports/:id", requireAdminApi, (req, res) => {
   return res.json(report);
 });
 
+app.post("/api/admin/reports", requireAdminApi, (req, res) => {
+  const { symbolOrName, thesis, target, markdown, model } = req.body || {};
+  const cleanedSymbolOrName = String(symbolOrName || "").trim();
+  const cleanedMarkdown = String(markdown || "");
+
+  if (!cleanedSymbolOrName) {
+    return res.status(400).json({ message: "symbolOrName is required." });
+  }
+  if (!cleanedMarkdown.trim()) {
+    return res.status(400).json({ message: "markdown is required." });
+  }
+
+  const report = {
+    id: crypto.randomUUID(),
+    symbolOrName: cleanedSymbolOrName,
+    thesis: String(thesis || "").trim(),
+    target: String(target || "").trim(),
+    markdown: cleanedMarkdown,
+    model: String(model || "manual").trim() || "manual",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdBy: req.adminUser || "admin",
+    source: "manual",
+  };
+
+  saveReport(report);
+
+  return res.status(201).json({
+    ok: true,
+    report,
+  });
+});
+
 app.put("/api/admin/reports/:id", requireAdminApi, (req, res) => {
   const reportId = String(req.params.id || "");
   const { symbolOrName, thesis, target, markdown } = req.body || {};

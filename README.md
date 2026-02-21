@@ -84,6 +84,7 @@ curl http://127.0.0.1:3000/api/health
 后台 API（需登录）：
 - `GET /api/admin/me`
 - `GET /api/admin/reports`
+- `POST /api/admin/reports`
 - `GET /api/admin/reports/:id`
 - `PUT /api/admin/reports/:id`
 - `DELETE /api/admin/reports/:id`
