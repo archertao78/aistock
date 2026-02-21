@@ -79,6 +79,7 @@ curl http://127.0.0.1:3000/api/health
 - 统一入口：`/manage`（会跳转到后台登录）
 - 登录页：`/admin/login`
 - 管理页：`/admin`
+- 新增页：`/admin/new`
 - 编辑页：`/admin/edit/:id`
 
 后台 API（需登录）：
@@ -88,3 +89,9 @@ curl http://127.0.0.1:3000/api/health
 - `GET /api/admin/reports/:id`
 - `PUT /api/admin/reports/:id`
 - `DELETE /api/admin/reports/:id`
+
+## 数据持久化
+
+- 报告统一保存到 `db/reports.json`（系统自动生成 + 后台手动新增都写入同一个文件）。
+- 服务启动时会自动初始化该文件（若不存在则自动创建）。
+- 备份建议：定期备份整个 `db/` 目录。

@@ -8,6 +8,7 @@ const { callGemini } = require("./gemini");
 const { CryptoMonitorService } = require("./cryptoMonitor");
 const { sendTelegramMessage } = require("./telegram");
 const {
+  initDb,
   saveReport,
   getReportById,
   listReports,
@@ -17,6 +18,7 @@ const {
 } = require("./db");
 
 dotenv.config();
+initDb();
 
 const app = express();
 
@@ -546,6 +548,10 @@ app.get("/manage", (_req, res) => {
 
 app.get("/admin", requireAdminPage, (_req, res) => {
   res.sendFile(path.join(__dirname, "..", "public", "admin.html"));
+});
+
+app.get("/admin/new", requireAdminPage, (_req, res) => {
+  res.sendFile(path.join(__dirname, "..", "public", "admin-edit.html"));
 });
 
 app.get("/admin/edit/:id", requireAdminPage, (_req, res) => {

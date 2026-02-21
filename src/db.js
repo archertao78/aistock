@@ -13,6 +13,10 @@ function ensureDbFile() {
   }
 }
 
+function initDb() {
+  ensureDbFile();
+}
+
 function readReports() {
   ensureDbFile();
   const raw = fs.readFileSync(dbPath, "utf8");
@@ -122,6 +126,7 @@ function deleteReportById(id) {
 }
 
 module.exports = {
+  initDb,
   saveReport,
   getReportById,
   listReports,
