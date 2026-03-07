@@ -48,8 +48,48 @@ function normalizeMimeType(input) {
   return value || "application/octet-stream";
 }
 
-function getFileKind(mimeType) {
+function inferMimeTypeByExt(fileName) {
+  const ext = path.extname(String(fileName || "")).toLowerCase();
+  const map = {
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".ogg": "video/ogg",
+    ".mov": "video/quicktime",
+    ".m4v": "video/x-m4v",
+    ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+    ".html": "text/html",
+    ".json": "application/json",
+    ".xml": "application/xml",
+    ".log": "text/plain",
+  };
+  return map[ext] || "";
+}
+
+function resolveMimeType(mimeType, fileName) {
   const normalized = normalizeMimeType(mimeType);
+  if (normalized && normalized !== "application/octet-stream") {
+    return normalized;
+  }
+  return inferMimeTypeByExt(fileName) || normalized;
+}
+
+function getFileKind(mimeType, fileName) {
+  const normalized = resolveMimeType(mimeType, fileName);
   if (normalized.startsWith("video/")) return "video";
   if (normalized.startsWith("audio/")) return "audio";
   if (normalized.startsWith("image/")) return "image";
@@ -78,15 +118,16 @@ function safeFilePath(inputPath) {
 function addUploadedFile(item) {
   const now = new Date().toISOString();
   const filePath = safeFilePath(item.filePath);
-  const mimeType = normalizeMimeType(item.mimeType);
+  const originalName = String(item.originalName || "file");
+  const mimeType = resolveMimeType(item.mimeType, originalName || path.basename(filePath));
 
   const record = {
     id: crypto.randomUUID(),
-    originalName: String(item.originalName || "file"),
+    originalName,
     storedName: path.basename(filePath),
     filePath,
     mimeType,
-    kind: getFileKind(mimeType),
+    kind: getFileKind(mimeType, originalName),
     size: Number(item.size || 0),
     createdAt: now,
   };
@@ -142,4 +183,6 @@ module.exports = {
   listUploadedFiles,
   getUploadedFileById,
   deleteUploadedFileById,
+  resolveMimeType,
+  getFileKind,
 };

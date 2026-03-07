@@ -25,6 +25,8 @@ const {
   listUploadedFiles,
   getUploadedFileById,
   deleteUploadedFileById,
+  resolveMimeType,
+  getFileKind,
 } = require("./fileStore");
 
 dotenv.config();
@@ -106,14 +108,17 @@ function formatSignalLabel(signalType) {
 }
 
 function publicFileItem(item) {
+  const originalName = String(item?.originalName || item?.storedName || "");
+  const mimeType = resolveMimeType(item?.mimeType, originalName);
+  const kind = getFileKind(mimeType, originalName);
   const id = encodeURIComponent(String(item.id || ""));
   return {
     id: item.id,
     originalName: item.originalName,
     storedName: item.storedName,
     size: item.size,
-    mimeType: item.mimeType,
-    kind: item.kind,
+    mimeType,
+    kind,
     createdAt: item.createdAt,
     contentUrl: `/api/files/${id}/content`,
     downloadUrl: `/api/files/${id}/download`,
@@ -507,7 +512,10 @@ app.get("/api/files/:id/content", (req, res) => {
     return res.status(404).json({ message: "File content is missing on server." });
   }
 
-  res.type(item.mimeType || "application/octet-stream");
+  const fileName = String(item.originalName || item.storedName || item.filePath || "");
+  const mimeType = resolveMimeType(item.mimeType, fileName);
+  res.setHeader("Accept-Ranges", "bytes");
+  res.type(mimeType || "application/octet-stream");
   return res.sendFile(item.filePath, (err) => {
     if (err && !res.headersSent) {
       res.status(err.statusCode || 500).json({ message: "Failed to read file content." });
