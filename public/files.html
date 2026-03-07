@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>文件管理</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="home-bg">
+    <main class="files-shell">
+      <section class="panel">
+        <div class="history-head">
+          <h1>文件管理</h1>
+          <a class="ghost-link" href="/">返回首页</a>
+        </div>
+        <p class="subtext">支持上传视频、音频、图片、文本等文件，并提供在线播放/预览、下载、删除。</p>
+
+        <form id="uploadForm" class="form-grid file-upload-form">
+          <label>
+            选择文件
+            <input id="fileInput" name="file" type="file" required />
+          </label>
+          <div class="actions">
+            <button id="uploadBtn" type="submit">上传文件</button>
+            <button id="refreshBtn" class="ghost" type="button">刷新列表</button>
+            <span id="fileStatus" class="status"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="history-head">
+          <h2>文件列表</h2>
+        </div>
+        <ul id="fileList" class="file-list"></ul>
+      </section>
+    </main>
+
+    <script src="/files.js?v=20260308-1"></script>
+  </body>
+</html>

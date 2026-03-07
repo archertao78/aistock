@@ -1,6 +1,8 @@
 const path = require("path");
+const fs = require("fs");
 const crypto = require("crypto");
 const express = require("express");
+const multer = require("multer");
 const dotenv = require("dotenv");
 
 const { buildPrompt, buildCryptoSignalPrompt } = require("./prompt");
@@ -16,9 +18,18 @@ const {
   updateReportById,
   deleteReportById,
 } = require("./db");
+const {
+  initFileStore,
+  getUploadsDir,
+  addUploadedFile,
+  listUploadedFiles,
+  getUploadedFileById,
+  deleteUploadedFileById,
+} = require("./fileStore");
 
 dotenv.config();
 initDb();
+initFileStore();
 
 const app = express();
 
@@ -35,6 +46,24 @@ const ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET || "change_me_to_a_lon
 const ADMIN_SESSION_HOURS = Number(process.env.ADMIN_SESSION_HOURS || 24);
 const ADMIN_COOKIE_NAME = "aistock_admin_token";
 const ADMIN_COOKIE_SECURE = String(process.env.ADMIN_COOKIE_SECURE || "false") === "true";
+const parsedUploadSizeMb = Number(process.env.MAX_UPLOAD_SIZE_MB || 200);
+const MAX_UPLOAD_SIZE_MB = Number.isFinite(parsedUploadSizeMb) && parsedUploadSizeMb > 0 ? parsedUploadSizeMb : 200;
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      cb(null, getUploadsDir());
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(String(file.originalname || "")).toLowerCase();
+      const safeExt = /^\.[a-z0-9]{1,10}$/i.test(ext) ? ext : "";
+      cb(null, `${Date.now()}-${crypto.randomUUID()}${safeExt}`);
+    },
+  }),
+  limits: {
+    fileSize: MAX_UPLOAD_SIZE_MB * 1024 * 1024,
+  },
+});
 
 function formatNumber(value, fraction = 6) {
   const numeric = Number(value);
@@ -74,6 +103,21 @@ function formatSignalLabel(signalType) {
   if (signalType === "golden_cross") return "golden_cross";
   if (signalType === "death_cross") return "death_cross";
   return "none";
+}
+
+function publicFileItem(item) {
+  const id = encodeURIComponent(String(item.id || ""));
+  return {
+    id: item.id,
+    originalName: item.originalName,
+    storedName: item.storedName,
+    size: item.size,
+    mimeType: item.mimeType,
+    kind: item.kind,
+    createdAt: item.createdAt,
+    contentUrl: `/api/files/${id}/content`,
+    downloadUrl: `/api/files/${id}/download`,
+  };
 }
 
 function buildTickTelegramMessage(tickData) {
@@ -404,6 +448,97 @@ app.get("/api/reports/:id", (req, res) => {
   return res.json(report);
 });
 
+app.post("/api/files/upload", (req, res) => {
+  upload.single("file")(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({
+          message: `File too large. Max size: ${MAX_UPLOAD_SIZE_MB}MB.`,
+        });
+      }
+      return res.status(400).json({
+        message: err instanceof Error ? err.message : "Upload failed.",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "Please upload a file with field name `file`." });
+    }
+
+    try {
+      const saved = addUploadedFile({
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        filePath: req.file.path,
+      });
+      return res.status(201).json({
+        ok: true,
+        file: publicFileItem(saved),
+      });
+    } catch (saveErr) {
+      try {
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+      } catch (_cleanupErr) {
+        // best effort
+      }
+      return res.status(500).json({
+        message: saveErr instanceof Error ? saveErr.message : "Failed to save uploaded file.",
+      });
+    }
+  });
+});
+
+app.get("/api/files", (req, res) => {
+  const limit = Number(req.query.limit || 200);
+  const maxLimit = Number.isFinite(limit) ? Math.min(Math.max(1, limit), 1000) : 200;
+  const items = listUploadedFiles(maxLimit).map(publicFileItem);
+  res.json({ items });
+});
+
+app.get("/api/files/:id/content", (req, res) => {
+  const item = getUploadedFileById(req.params.id);
+  if (!item) {
+    return res.status(404).json({ message: "File not found." });
+  }
+  if (!item.filePath || !fs.existsSync(item.filePath)) {
+    return res.status(404).json({ message: "File content is missing on server." });
+  }
+
+  res.type(item.mimeType || "application/octet-stream");
+  return res.sendFile(item.filePath, (err) => {
+    if (err && !res.headersSent) {
+      res.status(err.statusCode || 500).json({ message: "Failed to read file content." });
+    }
+  });
+});
+
+app.get("/api/files/:id/download", (req, res) => {
+  const item = getUploadedFileById(req.params.id);
+  if (!item) {
+    return res.status(404).json({ message: "File not found." });
+  }
+  if (!item.filePath || !fs.existsSync(item.filePath)) {
+    return res.status(404).json({ message: "File content is missing on server." });
+  }
+
+  return res.download(item.filePath, item.originalName || "download", (err) => {
+    if (err && !res.headersSent) {
+      res.status(err.statusCode || 500).json({ message: "Failed to download file." });
+    }
+  });
+});
+
+app.delete("/api/files/:id", (req, res) => {
+  const deleted = deleteUploadedFileById(req.params.id);
+  if (!deleted) {
+    return res.status(404).json({ message: "File not found." });
+  }
+  return res.json({ ok: true });
+});
+
 app.post("/api/admin/login", (req, res) => {
   const username = String(req.body?.username || "").trim();
   const password = String(req.body?.password || "");
@@ -560,6 +695,10 @@ app.get("/admin/edit/:id", requireAdminPage, (_req, res) => {
 
 app.get("/report/:id", (_req, res) => {
   res.sendFile(path.join(__dirname, "..", "public", "report.html"));
+});
+
+app.get("/files", (_req, res) => {
+  res.sendFile(path.join(__dirname, "..", "public", "files.html"));
 });
 
 app.get("*", (_req, res) => {

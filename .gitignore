@@ -1,4 +1,6 @@
 node_modules/
 .env
 db/reports.json
+db/files.json
+uploads/
 npm-debug.log*

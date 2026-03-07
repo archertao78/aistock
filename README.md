@@ -29,6 +29,7 @@ CRYPTO_MONITOR_INTERVAL_MS=60000
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 TELEGRAM_API_BASE=https://api.telegram.org
+MAX_UPLOAD_SIZE_MB=200
 ```
 
 启动：
@@ -61,6 +62,12 @@ curl http://127.0.0.1:3000/api/health
 - `GET /api/crypto/monitor`
 - `POST /api/crypto/monitor`
 - `DELETE /api/crypto/monitor/:monitorId`
+- `POST /api/files/upload`（`multipart/form-data`，字段名 `file`）
+- `GET /api/files`
+- `GET /api/files/:id/content`
+- `GET /api/files/:id/download`
+- `DELETE /api/files/:id`
+- `GET /files`
 
 ## Telegram 推送（盯盘）
 
