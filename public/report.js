@@ -24,7 +24,7 @@ function renderInline(text) {
   html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   html = html.replace(
     /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
   );
   return html;
 }
@@ -35,8 +35,7 @@ function stripLeadFluff(markdown) {
     .split("\n");
 
   const fluffPatterns = [
-    /^(好的|当然|没问题|可以|以下|下面|这是|这是一份|根据).*(报告|分析).*(框架|要求|撰写|如下)?[。！!]*$/i,
-    /^.*按照您提供.*(框架|要求).*[。！!]*$/i,
+    /^(okay|sure|of course|below is|here is).*(report|analysis).*$/i,
   ];
 
   let i = 0;
@@ -81,15 +80,15 @@ function fallbackMarkdownToHtml(markdown) {
 
   for (const rawLine of lines) {
     const line = rawLine.trimEnd();
-    const trim = line.trim();
+    const trimmed = line.trim();
 
-    if (!trim) {
+    if (!trimmed) {
       flushParagraph();
       flushList();
       continue;
     }
 
-    const heading = trim.match(/^(#{1,6})\s+(.*)$/);
+    const heading = trimmed.match(/^(#{1,6})\s+(.*)$/);
     if (heading) {
       flushParagraph();
       flushList();
@@ -98,14 +97,14 @@ function fallbackMarkdownToHtml(markdown) {
       continue;
     }
 
-    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trim)) {
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
       flushParagraph();
       flushList();
       out.push("<hr>");
       continue;
     }
 
-    const listItem = trim.match(/^[-*+]\s+(.*)$/);
+    const listItem = trimmed.match(/^[-*+]\s+(.*)$/);
     if (listItem) {
       flushParagraph();
       listItems.push(listItem[1].trim());
@@ -113,9 +112,9 @@ function fallbackMarkdownToHtml(markdown) {
     }
 
     if (listItems.length) {
-      listItems[listItems.length - 1] += ` ${trim}`;
+      listItems[listItems.length - 1] += ` ${trimmed}`;
     } else {
-      paragraph.push(trim);
+      paragraph.push(trimmed);
     }
   }
 
@@ -155,8 +154,8 @@ async function renderReport() {
       throw new Error(data?.message || "Failed to load report.");
     }
 
-    title.textContent = `分析报告 - ${data.symbolOrName}`;
-    meta.textContent = `生成时间：${fmtTime(data.createdAt)} | 分析师：火眼`;
+    title.textContent = `Report - ${data.symbolOrName}`;
+    meta.textContent = `Generated: ${fmtTime(data.createdAt)} | Analyst: FireEye`;
 
     const markdown = stripLeadFluff(data.markdown || data.rawOutput || "No report content.");
     body.innerHTML = markdownToHtml(markdown);

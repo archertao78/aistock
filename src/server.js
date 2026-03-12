@@ -328,13 +328,13 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-app.get("/api/crypto/monitor", (_req, res) => {
+app.get("/api/crypto/monitor", requireAdminApi, (_req, res) => {
   res.json({
     items: cryptoMonitor.list(),
   });
 });
 
-app.post("/api/crypto/monitor", (req, res) => {
+app.post("/api/crypto/monitor", requireAdminApi, (req, res) => {
   const instId = String(req.body?.instId || "").trim();
   const telegramBotToken = String(req.body?.telegramBotToken || "").trim();
   const telegramChatId = String(req.body?.telegramChatId || "").trim();
@@ -359,7 +359,7 @@ app.post("/api/crypto/monitor", (req, res) => {
   }
 });
 
-app.delete("/api/crypto/monitor/:monitorId", (req, res) => {
+app.delete("/api/crypto/monitor/:monitorId", requireAdminApi, (req, res) => {
   const monitorId = decodeURIComponent(String(req.params.monitorId || "").trim());
   if (!monitorId) {
     return res.status(400).json({ message: "monitorId is required." });
@@ -453,7 +453,7 @@ app.get("/api/reports/:id", (req, res) => {
   return res.json(report);
 });
 
-app.post("/api/files/upload", (req, res) => {
+app.post("/api/files/upload", requireAdminApi, (req, res) => {
   upload.single("file")(req, res, (err) => {
     if (err) {
       if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
@@ -496,14 +496,14 @@ app.post("/api/files/upload", (req, res) => {
   });
 });
 
-app.get("/api/files", (req, res) => {
+app.get("/api/files", requireAdminApi, (req, res) => {
   const limit = Number(req.query.limit || 200);
   const maxLimit = Number.isFinite(limit) ? Math.min(Math.max(1, limit), 1000) : 200;
   const items = listUploadedFiles(maxLimit).map(publicFileItem);
   res.json({ items });
 });
 
-app.get("/api/files/:id/content", (req, res) => {
+app.get("/api/files/:id/content", requireAdminApi, (req, res) => {
   const item = getUploadedFileById(req.params.id);
   if (!item) {
     return res.status(404).json({ message: "File not found." });
@@ -523,7 +523,7 @@ app.get("/api/files/:id/content", (req, res) => {
   });
 });
 
-app.get("/api/files/:id/download", (req, res) => {
+app.get("/api/files/:id/download", requireAdminApi, (req, res) => {
   const item = getUploadedFileById(req.params.id);
   if (!item) {
     return res.status(404).json({ message: "File not found." });
@@ -539,7 +539,7 @@ app.get("/api/files/:id/download", (req, res) => {
   });
 });
 
-app.delete("/api/files/:id", (req, res) => {
+app.delete("/api/files/:id", requireAdminApi, (req, res) => {
   const deleted = deleteUploadedFileById(req.params.id);
   if (!deleted) {
     return res.status(404).json({ message: "File not found." });
@@ -705,7 +705,7 @@ app.get("/report/:id", (_req, res) => {
   res.sendFile(path.join(__dirname, "..", "public", "report.html"));
 });
 
-app.get("/files", (_req, res) => {
+app.get("/files", requireAdminPage, (_req, res) => {
   res.sendFile(path.join(__dirname, "..", "public", "files.html"));
 });
 
